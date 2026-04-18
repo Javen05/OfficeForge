@@ -210,7 +210,7 @@ export function XlsxPane({
           type="button"
           onClick={openStylePopup}
           disabled={!activeRange || locked}
-          className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${allCellsBold || allCellsItalic || allCellsHighlighted ? 'border-[#6d7dff]/60 bg-[#6d7dff]/20 text-white' : 'border-white/10 bg-white/5 text-white enabled:hover:bg-white/10'}`}
+          className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-40 ${stylePopupOpen || allCellsBold || allCellsItalic || allCellsHighlighted ? 'border-[#6d7dff]/60 bg-[#6d7dff]/20 text-white' : 'border-white/10 bg-white/5 text-white enabled:hover:bg-white/10'}`}
         >
           Style
         </button>

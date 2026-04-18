@@ -2,7 +2,8 @@
 
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, Presentation, Table2, Upload, Sparkles, Search, Maximize2, Sheet, ChevronRight, ChevronDown, Download } from 'lucide-react';
+import { FileText, Presentation, Table2, Upload, Sparkles, Search, Maximize2, Minimize2, Sheet, ChevronRight, ChevronDown, Download } from 'lucide-react';
+import Link from 'next/link';
 import * as mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import { asBlob as htmlAsDocxBlob } from 'html-docx-js-typescript';
@@ -98,28 +99,6 @@ function updateSheetStyles(
   }
 
   return nextStyles;
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function csvToDocxHtml(fileName: string, csvText: string) {
-  const workbook = XLSX.read(csvText, { type: 'string' });
-  const sheetName = workbook.SheetNames[0] ?? 'Sheet1';
-  const worksheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<string[]>(worksheet, { header: 1, blankrows: false }) as string[][];
-  const displayRows = rows.length > 0 ? rows : [['']];
-  const body = displayRows
-    .map((row) => `<p>${escapeHtml(row.map((value) => `${value ?? ''}`).join(' | ') || ' ')}</p>`)
-    .join('');
-
-  return `<h1>${escapeHtml(fileName.replace(/\.[^.]+$/, '') || fileName)}</h1><p>CSV import</p>${body}`;
 }
 
 function inferXlsxCellValue(value: string) {
@@ -298,6 +277,7 @@ export function EditorSuite() {
   const [fileTypeFilter, setFileTypeFilter] = useState<'all' | DocKind>('all');
   const [importTypeFilter, setImportTypeFilter] = useState<'all' | DocKind>('all');
   const [showClearConfirmDialog, setShowClearConfirmDialog] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [focusMode, setFocusMode] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [downloadFormat, setDownloadFormat] = useState<'docx' | 'pdf' | 'csv' | 'xlsx'>('docx');
@@ -338,11 +318,11 @@ export function EditorSuite() {
   };
 
   const getImportAccept = (type: 'all' | DocKind) => {
-    if (type === 'docx') return '.doc,.docx,.csv';
+    if (type === 'docx') return '.doc,.docx';
     if (type === 'pdf') return '.pdf';
     if (type === 'ppt') return '.ppt,.pptx';
-    if (type === 'xlsx') return '.xls,.xlsx';
-    return '.doc,.docx,.csv,.pdf,.ppt,.pptx,.xls,.xlsx';
+    if (type === 'xlsx') return '.xls,.xlsx,.csv';
+    return '.doc,.docx,.pdf,.ppt,.pptx,.xls,.xlsx,.csv';
   };
 
   const revokePreviewUrls = (docs: DocumentState[]) => {
@@ -352,6 +332,21 @@ export function EditorSuite() {
       }
     }
   };
+
+  useEffect(() => {
+    const savedTheme = window.localStorage.getItem('office-forge-theme');
+    if (savedTheme === 'dark' || savedTheme === 'light') {
+      setTheme(savedTheme);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.toggle('theme-light', theme === 'light');
+    window.localStorage.setItem('office-forge-theme', theme);
+    return () => {
+      document.body.classList.remove('theme-light');
+    };
+  }, [theme]);
 
   useEffect(() => {
     documentsRef.current = documents;
@@ -473,12 +468,8 @@ export function EditorSuite() {
 
     try {
       if (kind === 'docx') {
-        if (file.name.toLowerCase().endsWith('.csv')) {
-          created.contentHtml = csvToDocxHtml(file.name, await file.text());
-        } else {
-          const result = await mammoth.convertToHtml({ arrayBuffer: await fileToText(file) });
-          created.contentHtml = result.value;
-        }
+        const result = await mammoth.convertToHtml({ arrayBuffer: await fileToText(file) });
+        created.contentHtml = result.value;
       }
 
       if (kind === 'xlsx') {
@@ -877,17 +868,31 @@ export function EditorSuite() {
   };
 
   return (
-    <main className="min-h-screen p-3 text-white sm:p-4 lg:p-5">
+    <main className={`min-h-screen p-3 sm:p-4 lg:p-5 ${theme === 'light' ? 'text-[#0f172a]' : 'text-white'}`}>
       <div className="mx-auto flex h-[calc(100vh-1.5rem)] max-w-[1800px] flex-col gap-4 overflow-hidden sm:h-[calc(100vh-2rem)]">
-        <section className={`shrink-0 overflow-hidden rounded-[28px] border border-white/10 bg-white/5 shadow-soft backdrop-blur-xl ${focusMode ? 'hidden' : ''}`}>
+        <section className={`shrink-0 overflow-hidden rounded-[28px] border shadow-soft backdrop-blur-xl ${theme === 'light' ? 'border-black/10 bg-white/70' : 'border-white/10 bg-white/5'} ${focusMode ? 'hidden' : ''}`}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 p-4">
-            <button
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white transition hover:bg-white/10"
-              onClick={clearLibraryWithConfirm}
-            >
-              <Sparkles className="h-4 w-4" />
-              Clear library
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
+                onClick={clearLibraryWithConfirm}
+              >
+                <Sparkles className="h-4 w-4" />
+                Clear library
+              </button>
+              <Link
+                href="/about"
+                className={`inline-flex items-center rounded-full border px-4 py-2.5 text-sm transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
+              >
+                About
+              </Link>
+              <Link
+                href="/readme"
+                className={`inline-flex items-center rounded-full border px-4 py-2.5 text-sm transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
+              >
+                Readme
+              </Link>
+            </div>
             <div className="inline-flex items-center">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-l-full bg-[#f6c76a] px-4 py-2.5 text-sm font-semibold text-[#111827] transition hover:bg-[#ffe08f]">
                 <Upload className="h-4 w-4" />
@@ -909,6 +914,13 @@ export function EditorSuite() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/75" />
               </div>
+              <button
+                type="button"
+                onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+                className={`ml-2 rounded-full border px-4 py-2.5 text-sm transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
+              >
+                {theme === 'dark' ? 'L mode' : 'D mode'}
+              </button>
             </div>
           </div>
         </section>
@@ -1022,7 +1034,7 @@ export function EditorSuite() {
                     setFocusMode((current) => !current);
                     setStatus(!focusMode ? 'Focus mode enabled.' : 'Focus mode disabled.');
                   }}>
-                    <Maximize2 className="mr-2 inline h-4 w-4" />
+                    {focusMode ? <Minimize2 className="mr-2 inline h-4 w-4" /> : <Maximize2 className="mr-2 inline h-4 w-4" />}
                     {focusMode ? 'Exit focus' : 'Focus mode'}
                   </button>
                 </div>

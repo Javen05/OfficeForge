@@ -17,7 +17,7 @@ export function detectKind(name: string): DocKind {
   const lower = name.toLowerCase();
   if (lower.endsWith('.pdf')) return 'pdf';
   if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) return 'ppt';
-  if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) return 'xlsx';
+  if (lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv')) return 'xlsx';
   return 'docx';
 }
 
