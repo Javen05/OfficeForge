@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { GripVertical } from 'lucide-react';
 import type { SlideState } from '@/types/documents';
@@ -19,7 +19,7 @@ type PptPaneProps = {
   onBringForward: () => void;
   onSendBackward: () => void;
   onAddImage: (file: File) => void;
-  onElementPointerDown: (event: ReactPointerEvent<HTMLButtonElement>, elementId: string) => void;
+  onElementPointerDown: (event: ReactPointerEvent<HTMLDivElement>, elementId: string) => void;
   onElementTextChange: (elementId: string, value: string) => void;
 };
 
@@ -41,8 +41,23 @@ export function PptPane({
   onElementTextChange
 }: PptPaneProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
-  const currentSlide = slides[selectedSlideIndex];
-  if (!currentSlide) return null;
+  useEffect(() => {
+    if (slides.length > 0 && (selectedSlideIndex < 0 || selectedSlideIndex >= slides.length)) {
+      onSelectSlide(0);
+    }
+  }, [onSelectSlide, selectedSlideIndex, slides.length]);
+
+  if (slides.length === 0) {
+    return (
+      <div className="rounded-[24px] border border-white/10 bg-[#07111f] p-6 text-white">
+        <div className="text-lg font-semibold">No slides available</div>
+        <p className="mt-2 text-sm text-white/70">Add a slide to start editing your presentation.</p>
+        <button type="button" onClick={onAddSlide} className="mt-4 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white transition hover:bg-white/10">Add slide</button>
+      </div>
+    );
+  }
+
+  const currentSlide = slides[Math.min(selectedSlideIndex, slides.length - 1)];
 
   const orderedElements = [...currentSlide.elements].sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
 
@@ -109,10 +124,13 @@ export function PptPane({
                     ? 'bg-[#13203a] text-white'
                     : 'bg-[#f6c76a] text-[#13203a]';
               return (
-                <button
+                <div
                   key={element.id}
-                  type="button"
-                  onPointerDown={(event) => onElementPointerDown(event, element.id)}
+                  onPointerDown={(event) => {
+                    const target = event.target as HTMLElement;
+                    if (target.closest('textarea')) return;
+                    onElementPointerDown(event, element.id);
+                  }}
                   className={`absolute rounded-[16px] border p-3 text-left shadow-md transition ${active ? 'border-[#6d7dff] ring-2 ring-[#6d7dff]/30' : 'border-black/10'} ${kindStyle}`}
                   style={{
                     left: `${element.x}%`,
@@ -123,26 +141,24 @@ export function PptPane({
                     backgroundColor: element.kind === 'image' ? undefined : element.fillColor
                   }}
                 >
-                  <div className="mb-2 flex items-center justify-between text-[10px] uppercase tracking-[0.24em] opacity-70">
-                    <span>{element.kind}</span>
-                    <GripVertical className="h-3.5 w-3.5" />
-                  </div>
+                  <GripVertical className="pointer-events-none absolute right-2 top-2 h-3.5 w-3.5 opacity-70" />
                   {element.kind === 'image' && element.imageSrc ? (
                     <img
                       src={element.imageSrc}
                       alt="Slide asset"
                       draggable={false}
-                      className="h-[calc(100%-24px)] w-full rounded-[10px] object-contain"
+                      className="h-full w-full rounded-[10px] object-contain"
                     />
                   ) : (
                     <textarea
                       value={element.text}
+                      onPointerDown={(event) => event.stopPropagation()}
                       onChange={(event) => onElementTextChange(element.id, event.target.value)}
-                      className="h-[calc(100%-24px)] w-full resize-none bg-transparent text-sm leading-6 outline-none"
+                      className="h-full w-full resize-none bg-transparent text-sm leading-6 outline-none"
                       style={{ color: element.textColor }}
                     />
                   )}
-                </button>
+                </div>
               );
             })}
           </div>

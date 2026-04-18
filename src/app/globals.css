@@ -24,10 +24,54 @@ body {
 body.theme-light {
   color-scheme: light;
   background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.22), transparent 25%),
-    radial-gradient(circle at top right, rgba(251, 191, 36, 0.18), transparent 28%),
-    linear-gradient(180deg, #eef3ff 0%, #f8fafc 100%);
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 26%),
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.12), transparent 24%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 58%, #eef4ff 100%);
   color: #0f172a;
+}
+
+body.theme-light [class*='text-white'] {
+  color: #0f172a !important;
+}
+
+body.theme-light [class*='placeholder:text-white']::placeholder {
+  color: rgba(15, 23, 42, 0.45) !important;
+}
+
+body.theme-light [class*='bg-[#07111f'],
+body.theme-light [class*='bg-[#08101e'],
+body.theme-light [class*='bg-[#0f1b31'],
+body.theme-light [class*='bg-[#030712'],
+body.theme-light [class*='bg-white/5'],
+body.theme-light [class*='bg-white/10'],
+body.theme-light [class*='bg-white/15'],
+body.theme-light [class*='bg-white/20'],
+body.theme-light [class*='bg-white/70'],
+body.theme-light [class*='bg-[#13203a'],
+body.theme-light [class*='bg-[#0a162b'] {
+  background-color: #ffffff !important;
+  background-image: none !important;
+}
+
+body.theme-light [class*='border-white/'],
+body.theme-light [class*='border-black/'],
+body.theme-light [class*='border-[#'] {
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+body.theme-light [class*='text-white/'] {
+  color: rgba(15, 23, 42, 0.7) !important;
+}
+
+body.theme-light [class*='text-white'] a,
+body.theme-light a[class*='text-white'] {
+  color: inherit !important;
+}
+
+body.theme-light [class*='shadow'],
+body.theme-light [class*='drop-shadow'] {
+  box-shadow: none !important;
+  filter: none !important;
 }
 
 * {

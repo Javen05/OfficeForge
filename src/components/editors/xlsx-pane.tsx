@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { columnLabel } from '@/utils/document-utils';
 
 export type CellAddress = { row: number; col: number };
@@ -59,6 +59,14 @@ function rangeLabel(range: CellRange | null) {
 const DEFAULT_ROW_HEIGHT = 56;
 const DEFAULT_COL_WIDTH = 180;
 
+function estimateAutoRowHeight(value: string, columnWidth: number) {
+  const text = value || '';
+  const lines = text.split('\n');
+  const charsPerLine = Math.max(8, Math.floor((columnWidth - 24) / 8));
+  const wrappedLineCount = lines.reduce((count, line) => count + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+  return Math.max(DEFAULT_ROW_HEIGHT, wrappedLineCount * 22 + 16);
+}
+
 export function XlsxPane({
   rows,
   formulas,
@@ -87,6 +95,8 @@ export function XlsxPane({
   const [stylePopupOpen, setStylePopupOpen] = useState(false);
   const [rowResizeState, setRowResizeState] = useState<{ row: number; startY: number; startHeight: number } | null>(null);
   const [colResizeState, setColResizeState] = useState<{ col: number; startX: number; startWidth: number } | null>(null);
+  const stylePopupRef = useRef<HTMLDivElement | null>(null);
+  const styleButtonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     setFormulaInput(activeCellValue);
@@ -126,11 +136,41 @@ export function XlsxPane({
     };
   }, [rowResizeState, colResizeState, onResizeColumn, onResizeRow]);
 
+  useEffect(() => {
+    if (!stylePopupOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (stylePopupRef.current?.contains(target)) return;
+      if (styleButtonRef.current?.contains(target)) return;
+      setStylePopupOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setStylePopupOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [stylePopupOpen]);
+
   const activeRange = useMemo(() => {
     if (anchor && edge) return normalizeRange({ start: anchor, end: edge });
     if (selectedCell) return { start: selectedCell, end: selectedCell };
     return null;
   }, [anchor, edge, selectedCell]);
+
+  useEffect(() => {
+    if (!activeRange) {
+      setStylePopupOpen(false);
+    }
+  }, [activeRange]);
 
   const allCellsBold = useMemo(() => {
     if (!activeRange) return false;
@@ -207,6 +247,7 @@ export function XlsxPane({
           Apply
         </button>
         <button
+          ref={styleButtonRef}
           type="button"
           onClick={openStylePopup}
           disabled={!activeRange || locked}
@@ -234,7 +275,7 @@ export function XlsxPane({
       <div className="text-xs text-white/55">Apply is for bulk fill. Normal cell edits already auto-update dependent formulas.</div>
       {locked && <div className="text-xs text-[#f6c76a]">Calculating formulas: cells are temporarily locked.</div>}
       {stylePopupOpen && activeRange && !locked && (
-        <div className="absolute left-4 top-[3.7rem] z-30 w-52 rounded-2xl border border-white/10 bg-[#07111f] p-2 shadow-soft">
+        <div ref={stylePopupRef} className="absolute left-4 top-[3.7rem] z-30 w-52 rounded-2xl border border-white/10 bg-[#07111f] p-2 shadow-soft">
           <div className="mb-2 px-2 text-[10px] uppercase tracking-[0.16em] text-white/40">Text style</div>
           <div className="flex flex-col gap-1">
             <button type="button" onClick={() => onToggleBold(activeRange)} className={`rounded-xl px-3 py-2 text-left text-sm transition ${allCellsBold ? 'bg-[#6d7dff]/20 text-white' : 'bg-white/5 text-white/85 hover:bg-white/10'}`}>Bold</button>
@@ -318,7 +359,7 @@ export function XlsxPane({
                             onResizeRow(rowIndex, nextHeight);
                           }
                         }}
-                        onDoubleClick={() => onResizeRow(rowIndex, Math.max(DEFAULT_ROW_HEIGHT, Math.round(window.getComputedStyle(document.body).fontSize ? rowHeights[rowIndex] ?? DEFAULT_ROW_HEIGHT : DEFAULT_ROW_HEIGHT)))}
+                        onDoubleClick={() => onResizeRow(rowIndex, estimateAutoRowHeight(value, colWidths[colIndex] ?? DEFAULT_COL_WIDTH))}
                         onChange={(event) => onCellChange(rowIndex, colIndex, event.target.value)}
                         className={`w-full resize-y bg-transparent px-3 py-2 text-sm text-white outline-none ${style?.bold ? 'font-bold' : ''} ${style?.italic ? 'italic' : ''} ${style?.highlight ? 'bg-[#f6c76a]/30' : ''} ${active ? 'ring-2 ring-inset ring-[#6d7dff]/60' : ''} ${inRange ? 'bg-[#6d7dff]/10' : ''}`}
                         style={{ height: `${rowHeights[rowIndex] ?? DEFAULT_ROW_HEIGHT}px`, backgroundColor: style?.highlight ? 'rgba(246, 199, 106, 0.18)' : undefined }}

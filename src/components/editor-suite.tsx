@@ -2,7 +2,7 @@
 
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FileText, Presentation, Table2, Upload, Sparkles, Search, Maximize2, Minimize2, Sheet, ChevronRight, ChevronDown, Download } from 'lucide-react';
+import { FileText, Presentation, Table2, Upload, Sparkles, Search, Maximize2, Minimize2, MoonStar, Sun, Sheet, ChevronRight, ChevronDown, Download } from 'lucide-react';
 import Link from 'next/link';
 import * as mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
@@ -869,7 +869,7 @@ export function EditorSuite() {
 
   return (
     <main className={`min-h-screen p-3 sm:p-4 lg:p-5 ${theme === 'light' ? 'text-[#0f172a]' : 'text-white'}`}>
-      <div className="mx-auto flex h-[calc(100vh-1.5rem)] max-w-[1800px] flex-col gap-4 overflow-hidden sm:h-[calc(100vh-2rem)]">
+      <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1800px] flex-col gap-4 overflow-hidden sm:min-h-[calc(100vh-2rem)]">
         <section className={`shrink-0 overflow-hidden rounded-[28px] border shadow-soft backdrop-blur-xl ${theme === 'light' ? 'border-black/10 bg-white/70' : 'border-white/10 bg-white/5'} ${focusMode ? 'hidden' : ''}`}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -880,18 +880,15 @@ export function EditorSuite() {
                 <Sparkles className="h-4 w-4" />
                 Clear library
               </button>
-              <Link
-                href="/about"
-                className={`inline-flex items-center rounded-full border px-4 py-2.5 text-sm transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
+              <button
+                type="button"
+                onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                className={`inline-flex items-center rounded-full border p-2.5 transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
               >
-                About
-              </Link>
-              <Link
-                href="/readme"
-                className={`inline-flex items-center rounded-full border px-4 py-2.5 text-sm transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
-              >
-                Readme
-              </Link>
+                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <MoonStar className="h-4 w-4" />}
+              </button>
             </div>
             <div className="inline-flex items-center">
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-l-full bg-[#f6c76a] px-4 py-2.5 text-sm font-semibold text-[#111827] transition hover:bg-[#ffe08f]">
@@ -914,13 +911,6 @@ export function EditorSuite() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/75" />
               </div>
-              <button
-                type="button"
-                onClick={() => setTheme((current) => current === 'dark' ? 'light' : 'dark')}
-                className={`ml-2 rounded-full border px-4 py-2.5 text-sm transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
-              >
-                {theme === 'dark' ? 'L mode' : 'D mode'}
-              </button>
             </div>
           </div>
         </section>
@@ -1092,7 +1082,7 @@ export function EditorSuite() {
                     onAddImage={(file) => {
                       addPptImageElement(file).catch(() => setStatus('Image import failed.'));
                     }}
-                    onElementPointerDown={(event: ReactPointerEvent<HTMLButtonElement>, elementId: string) => {
+                    onElementPointerDown={(event: ReactPointerEvent<HTMLDivElement>, elementId: string) => {
                       if (!slideStageRef.current) return;
                       const slide = selectedDocument.slides[selectedSlideIndex];
                       const element = slide?.elements.find((entry) => entry.id === elementId);
@@ -1168,6 +1158,16 @@ export function EditorSuite() {
           </div>
         )}
       </div>
+
+      <footer className={`mx-auto mt-12 flex max-w-[1800px] items-center justify-between gap-4 rounded-2xl border px-4 py-4 text-sm sm:mt-16 ${theme === 'light' ? 'border-black/10 bg-white/65 text-[#0f172a]' : 'border-white/10 bg-white/5 text-white/80'}`}>
+        <span>Copyright © 2026 Office Forge. Built for open access document editing.</span>
+        <Link
+          href="/about"
+          className={`rounded-full border px-4 py-1.5 transition ${theme === 'light' ? 'border-black/10 bg-black/[0.03] text-[#0f172a] hover:bg-black/[0.06]' : 'border-white/10 bg-white/5 text-white hover:bg-white/10'}`}
+        >
+          About
+        </Link>
+      </footer>
     </main>
   );
 }

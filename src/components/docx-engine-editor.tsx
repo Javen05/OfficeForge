@@ -37,6 +37,8 @@ function ToolbarButton({ label, onClick, active }: ToolbarButtonProps) {
 export function DocxEngineEditor({ html, onChange }: DocxEngineEditorProps) {
   const [showPageBreaks, setShowPageBreaks] = useState(true);
   const [toolbarExpanded, setToolbarExpanded] = useState(true);
+  const [linkEditorOpen, setLinkEditorOpen] = useState(false);
+  const [linkDraft, setLinkDraft] = useState('https://');
 
   const editor = useEditor({
     extensions: [
@@ -85,15 +87,20 @@ export function DocxEngineEditor({ html, onChange }: DocxEngineEditorProps) {
     return <div className="min-h-[520px] rounded-[18px] bg-white p-6 text-[#151515]">Loading editor...</div>;
   }
 
-  const setLink = () => {
+  const openLinkEditor = () => {
     const previous = editor.getAttributes('link').href as string | undefined;
-    const url = window.prompt('Enter URL', previous || 'https://');
-    if (url === null) return;
-    if (!url.trim()) {
+    setLinkDraft(previous || 'https://');
+    setLinkEditorOpen(true);
+  };
+
+  const applyLink = () => {
+    if (!linkDraft.trim()) {
       editor.chain().focus().unsetLink().run();
+      setLinkEditorOpen(false);
       return;
     }
-    editor.chain().focus().setLink({ href: url.trim() }).run();
+    editor.chain().focus().setLink({ href: linkDraft.trim() }).run();
+    setLinkEditorOpen(false);
   };
 
   return (
@@ -146,9 +153,32 @@ export function DocxEngineEditor({ html, onChange }: DocxEngineEditorProps) {
           <span className="mr-1 text-[10px] uppercase tracking-[0.16em] text-white/45">Layout</span>
           <ToolbarButton label="Insert Page Break" onClick={() => editor.chain().focus().setHorizontalRule().run()} />
           <ToolbarButton label={showPageBreaks ? 'Hide Page Guides' : 'Show Page Guides'} onClick={() => setShowPageBreaks((current) => !current)} active={showPageBreaks} />
-          <ToolbarButton label="Link" onClick={setLink} active={editor.isActive('link')} />
+          <ToolbarButton label="Link" onClick={openLinkEditor} active={editor.isActive('link') || linkEditorOpen} />
           <ToolbarButton label="Unlink" onClick={() => editor.chain().focus().unsetLink().run()} />
         </div>
+
+        {linkEditorOpen && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-white/10 pt-2">
+            <input
+              value={linkDraft}
+              onChange={(event) => setLinkDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  applyLink();
+                }
+                if (event.key === 'Escape') {
+                  setLinkEditorOpen(false);
+                }
+              }}
+              autoFocus
+              placeholder="https://example.com"
+              className="min-w-[220px] flex-1 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white outline-none placeholder:text-white/40"
+            />
+            <ToolbarButton label="Apply link" onClick={applyLink} />
+            <ToolbarButton label="Cancel" onClick={() => setLinkEditorOpen(false)} />
+          </div>
+        )}
           </>
         )}
       </div>
