@@ -28,6 +28,10 @@ export type SlideState = {
   bullets: string[];
   elements: SlideElementState[];
   backgroundColor?: string;
+  backgroundImage?: string;
+  speakerNotes?: string;
+  transitionType?: string;
+  layoutName?: string;
 };
 
 export type DocumentState = {
@@ -41,4 +45,7 @@ export type DocumentState = {
   sheets: SheetState[];
   pdfNotes: string;
   previewUrl?: string;
+  // DOCX specific fields
+  docxImages?: Record<string, string>; // id -> base64 data URL
+  docxWatermark?: string;
 };

@@ -22,6 +22,7 @@
     "html-docx-js-typescript": "^0.1.5",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.543.0",
     "mammoth": "^1.9.1",
     "next": "^15.4.1",

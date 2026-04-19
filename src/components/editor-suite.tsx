@@ -12,7 +12,8 @@ import { jsPDF } from 'jspdf';
 
 import type { DocKind, DocumentState, SlideState } from '@/types/documents';
 import { detectKind, fileToDataUrl, fileToText, clamp, fallbackSlide } from '@/utils/document-utils';
-import { parsePptxSlides } from '@/utils/pptx-parser';
+import { parseAdvancedPptxSlides } from '@/utils/pptx-advanced-parser';
+import { parseAdvancedDocx } from '@/utils/docx-advanced-parser';
 import { DocxPane } from '@/components/editors/docx-pane';
 import { PdfPane } from '@/components/editors/pdf-pane';
 import { PptPane } from '@/components/editors/ppt-pane';
@@ -27,6 +28,38 @@ function sheetCellKey(row: number, col: number) {
 function parseSheetCellKey(key: string) {
   const [rowText, colText] = key.split(':');
   return { row: Number(rowText), col: Number(colText) };
+}
+
+function reindexSheetMap<T>(
+  source: Record<string, T>,
+  axis: 'row' | 'col',
+  removedIndex: number
+) {
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(source)) {
+    const { row, col } = parseSheetCellKey(key);
+    if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
+    if (axis === 'row') {
+      if (row === removedIndex) continue;
+      const nextRow = row > removedIndex ? row - 1 : row;
+      next[sheetCellKey(nextRow, col)] = value;
+    } else {
+      if (col === removedIndex) continue;
+      const nextCol = col > removedIndex ? col - 1 : col;
+      next[sheetCellKey(row, nextCol)] = value;
+    }
+  }
+  return next;
+}
+
+function reindexNumericMap(source: Record<number, number>, removedIndex: number) {
+  const next: Record<number, number> = {};
+  for (const [key, value] of Object.entries(source)) {
+    const index = Number(key);
+    if (!Number.isFinite(index) || index === removedIndex) continue;
+    next[index > removedIndex ? index - 1 : index] = value;
+  }
+  return next;
 }
 
 function normalizeSheetRows(rows: string[][], minRows: number, minCols: number) {
@@ -197,37 +230,25 @@ function buildDocxPdfHtml(contentHtml: string) {
 }
 
 function buildDocxExportHtml(contentHtml: string) {
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    * { margin: 0; padding: 0; }
-    body {
-      font-family: Cambria, Georgia, serif;
-      font-size: 12pt;
-      line-height: 1.45;
-      color: #111827;
-    }
-    h1, h2, h3 { margin-top: 0.5em; margin-bottom: 0.25em; font-weight: bold; }
-    h1 { font-size: 2em; }
-    h2 { font-size: 1.5em; }
-    h3 { font-size: 1.25em; }
-    p { margin-bottom: 0.5em; }
-    ul, ol { margin-left: 1.25em; margin-bottom: 0.5em; }
-    li { margin-bottom: 0.25em; }
-    blockquote { border-left: 3px solid #9ca3af; padding-left: 0.75em; margin: 0.5em 0; }
-    hr { margin: 1em 0; }
-    strong, b { font-weight: bold; }
-    em, i { font-style: italic; }
-    u { text-decoration: underline; }
-    s, strike { text-decoration: line-through; }
-    code { font-family: 'Courier New', monospace; }
-    mark { background-color: yellow; }
-  </style>
-</head>
-<body>${contentHtml || '<p></p>'}</body>
-</html>`;
+  return `<style>
+body {
+  font-family: Cambria, Georgia, serif;
+  font-size: 12pt;
+  line-height: 1.45;
+  color: #111827;
+}
+h1 { font-size: 2em; margin: 1em 0 0.5em 0; }
+h2 { font-size: 1.5em; margin: 0.8em 0 0.4em 0; }
+h3 { font-size: 1.25em; margin: 0.6em 0 0.3em 0; }
+p { margin: 0.5em 0; }
+ul, ol { margin: 0.5em 0 0.5em 1.25em; }
+li { margin: 0.25em 0; }
+blockquote { border-left: 3px solid #9ca3af; padding-left: 0.75em; margin: 0.5em 0; }
+strong, b { font-weight: bold; }
+em, i { font-style: italic; }
+u { text-decoration: underline; }
+s, strike { text-decoration: line-through; }
+</style>${contentHtml || '<p></p>'}`;
 }
 
 
@@ -430,14 +451,14 @@ export function EditorSuite() {
     setSelectedSlideIndex(0);
     setSelectedElementId(null);
     setSelectedCell(null);
-  }, [selectedDocument?.id, selectedDocument?.kind]);
+  }, [selectedDocument]);
 
   useEffect(() => {
     if (!selectedDocument) return;
     if (selectedDocument.kind === 'pdf') setDownloadFormat('pdf');
     if (selectedDocument.kind === 'docx') setDownloadFormat('docx');
     if (selectedDocument.kind === 'xlsx') setDownloadFormat('xlsx');
-  }, [selectedDocument?.id, selectedDocument?.kind]);
+  }, [selectedDocument]);
 
   useEffect(() => {
     if (!dragState || selectedDocument?.kind !== 'ppt') return;
@@ -474,7 +495,7 @@ export function EditorSuite() {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [dragState, selectedDocument?.id, selectedDocument?.kind, selectedDocument?.slides]);
+  }, [dragState, selectedDocument, selectedDocument?.id, selectedDocument?.kind, selectedDocument?.slides]);
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -503,8 +524,30 @@ export function EditorSuite() {
 
     try {
       if (kind === 'docx') {
-        const result = await mammoth.convertToHtml({ arrayBuffer: await fileToText(file) });
-        created.contentHtml = result.value;
+        // First try advanced parsing to extract images and watermarks
+        try {
+          const advancedResult = await parseAdvancedDocx(file);
+          
+          // Still use mammoth for main content conversion (it's better at HTML)
+          const mammothResult = await mammoth.convertToHtml({ arrayBuffer: await fileToText(file) });
+          created.contentHtml = mammothResult.value || '<p>Document content could not be extracted. The file may be empty or in an unsupported format.</p>';
+          
+          // Store extracted images and watermark
+          if (advancedResult.images.length > 0) {
+            created.docxImages = {};
+            for (const img of advancedResult.images) {
+              created.docxImages[img.id] = img.data;
+            }
+          }
+          if (advancedResult.watermark) {
+            created.docxWatermark = advancedResult.watermark;
+          }
+        } catch (advancedError) {
+          // Fall back to basic mammoth parsing if advanced parsing fails
+          console.warn('Advanced DOCX parsing failed, using basic conversion:', advancedError);
+          const result = await mammoth.convertToHtml({ arrayBuffer: await fileToText(file) });
+          created.contentHtml = result.value || '<p>Document content could not be extracted. The file may be empty or in an unsupported format.</p>';
+        }
       }
 
       if (kind === 'xlsx') {
@@ -516,7 +559,7 @@ export function EditorSuite() {
       }
 
       if (kind === 'ppt') {
-        const slides = await parsePptxSlides(file);
+        const slides = await parseAdvancedPptxSlides(file);
         created.slides = slides;
       }
 
@@ -692,11 +735,6 @@ export function EditorSuite() {
 
   const toggleBoldForRange = (range: CellRange) => {
     if (!selectedDocument || selectedDocument.kind !== 'xlsx') return;
-    const top = Math.min(range.start.row, range.end.row);
-    const bottom = Math.max(range.start.row, range.end.row);
-    const left = Math.min(range.start.col, range.end.col);
-    const right = Math.max(range.start.col, range.end.col);
-
     updateDocument(selectedDocument.id, (document) => {
       const firstSheet = document.sheets[0] ?? { name: 'Sheet1', rows: [['']], formulas: {}, cellStyles: {}, rowHeights: {}, colWidths: {} };
       const nextStyles = updateSheetStyles(firstSheet.cellStyles ?? {}, range, 'bold');
@@ -900,10 +938,88 @@ export function EditorSuite() {
     }));
   };
 
+  const deleteSheetRow = (rowIndex: number) => {
+    if (!selectedDocument || selectedDocument.kind !== 'xlsx') return;
+    updateDocument(selectedDocument.id, (document) => ({
+      ...document,
+      sheets: document.sheets.map((sheet, index) => {
+        if (index !== 0) return sheet;
+        const rows = sheet.rows.length > 0 ? sheet.rows : [['']];
+        if (rows.length <= 1) {
+          return {
+            ...sheet,
+            rows: [['']],
+            formulas: {},
+            cellStyles: {},
+            rowHeights: {},
+            colWidths: sheet.colWidths ?? {}
+          };
+        }
+        const safeIndex = clamp(rowIndex, 0, rows.length - 1);
+        const nextRows = rows.filter((_, indexValue) => indexValue !== safeIndex);
+        return {
+          ...sheet,
+          rows: nextRows,
+          formulas: reindexSheetMap(sheet.formulas ?? {}, 'row', safeIndex),
+          cellStyles: reindexSheetMap(sheet.cellStyles ?? {}, 'row', safeIndex),
+          rowHeights: reindexNumericMap(sheet.rowHeights ?? {}, safeIndex)
+        };
+      }),
+      updatedAt: 'just now'
+    }));
+    setSelectedCell((current) => {
+      if (!current) return null;
+      if (current.row === rowIndex) return null;
+      if (current.row > rowIndex) return { row: current.row - 1, col: current.col };
+      return current;
+    });
+  };
+
+  const deleteSheetColumn = (colIndex: number) => {
+    if (!selectedDocument || selectedDocument.kind !== 'xlsx') return;
+    updateDocument(selectedDocument.id, (document) => ({
+      ...document,
+      sheets: document.sheets.map((sheet, index) => {
+        if (index !== 0) return sheet;
+        const rows = sheet.rows.length > 0 ? sheet.rows : [['']];
+        const maxColumns = Math.max(1, ...rows.map((row) => row.length));
+        if (maxColumns <= 1) {
+          return {
+            ...sheet,
+            rows: rows.map(() => ['']),
+            formulas: {},
+            cellStyles: {},
+            colWidths: {},
+            rowHeights: sheet.rowHeights ?? {}
+          };
+        }
+        const safeIndex = clamp(colIndex, 0, maxColumns - 1);
+        const nextRows = rows.map((row) => {
+          const normalized = Array.from({ length: maxColumns }).map((_, indexValue) => row[indexValue] ?? '');
+          return normalized.filter((_, indexValue) => indexValue !== safeIndex);
+        });
+        return {
+          ...sheet,
+          rows: nextRows,
+          formulas: reindexSheetMap(sheet.formulas ?? {}, 'col', safeIndex),
+          cellStyles: reindexSheetMap(sheet.cellStyles ?? {}, 'col', safeIndex),
+          colWidths: reindexNumericMap(sheet.colWidths ?? {}, safeIndex)
+        };
+      }),
+      updatedAt: 'just now'
+    }));
+    setSelectedCell((current) => {
+      if (!current) return null;
+      if (current.col === colIndex) return null;
+      if (current.col > colIndex) return { row: current.row, col: current.col - 1 };
+      return current;
+    });
+  };
+
   return (
     <main className={`min-h-screen p-3 sm:p-4 lg:p-5 ${theme === 'light' ? 'text-[#0f172a]' : 'text-white'}`}>
-      <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1800px] flex-col gap-4 overflow-hidden sm:min-h-[calc(100vh-2rem)]">
-        <section className={`sticky top-0 z-30 shrink-0 overflow-hidden rounded-[28px] border shadow-soft backdrop-blur-xl ${theme === 'light' ? 'border-black/10 bg-white/70' : 'border-white/10 bg-white/5'} ${focusMode ? 'hidden' : ''}`}>
+      <div className="mx-auto flex h-[calc(100vh-1.5rem)] max-w-[1800px] flex-col gap-4 overflow-hidden sm:h-[calc(100vh-2rem)]">
+        <section className={`sticky top-0 z-50 shrink-0 overflow-hidden rounded-[28px] border shadow-soft backdrop-blur-xl ${theme === 'light' ? 'border-black/10 bg-white/70' : 'border-white/10 bg-white/5'} ${focusMode ? 'hidden' : ''}`}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -949,7 +1065,7 @@ export function EditorSuite() {
         </section>
 
         <section className={`grid min-h-0 flex-1 gap-4 ${focusMode ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[280px_minmax(0,1fr)]'}`}>
-          <aside className={`sticky top-[5.5rem] z-20 min-h-0 overflow-hidden rounded-[28px] border border-white/10 bg-[#08101e]/90 backdrop-blur-xl ${focusMode ? 'hidden' : ''}`}>
+          <aside className={`sticky top-[5.5rem] z-40 min-h-0 overflow-auto rounded-[28px] border border-white/10 bg-[#08101e]/90 backdrop-blur-xl ${focusMode ? 'hidden' : ''}`}>
             <div className="border-b border-white/10 p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-semibold text-white">Library</div>
@@ -976,7 +1092,7 @@ export function EditorSuite() {
                 />
               </div>
             </div>
-            <div className="h-[calc(100%-5.75rem)] space-y-2 overflow-auto p-3">
+            <div className="space-y-2 overflow-auto p-3">
               {filteredDocuments.map((document) => {
                 const Icon = document.kind === 'docx' ? FileText : document.kind === 'ppt' ? Presentation : document.kind === 'xlsx' ? Table2 : Sheet;
                 const active = document.id === selectedDocument?.id;
@@ -1004,7 +1120,7 @@ export function EditorSuite() {
 
           <section className="grid min-h-0 overflow-hidden rounded-[28px] border border-white/10 bg-[#08101e]/92 shadow-soft backdrop-blur-xl">
             <div className="min-h-0 overflow-hidden">
-              <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4 sm:p-5 shadow-soft backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4 sm:p-5">
                 <div>
                   {selectedDocument ? (
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold text-white">
@@ -1073,6 +1189,8 @@ export function EditorSuite() {
                 {selectedDocument?.kind === 'docx' && (
                   <DocxPane
                     html={selectedDocument.contentHtml}
+                    watermark={selectedDocument.docxWatermark}
+                    images={selectedDocument.docxImages}
                     onChange={(nextHtml) => updateDocument(selectedDocument.id, (document) => ({
                       ...document,
                       contentHtml: nextHtml,
@@ -1131,6 +1249,15 @@ export function EditorSuite() {
                       ...slide,
                       elements: slide.elements.map((element) => element.id === elementId ? { ...element, text: value } : element)
                     }))}
+                    onSlideUpdate={(index, updates) => {
+                      updateDocument(selectedDocument.id, (document) => ({
+                        ...document,
+                        slides: document.slides.map((slide, slideIndex) => 
+                          slideIndex === index ? { ...slide, ...updates } : slide
+                        ),
+                        updatedAt: 'just now'
+                      }));
+                    }}
                   />
                 )}
 
@@ -1151,6 +1278,8 @@ export function EditorSuite() {
                     onToggleHighlight={toggleHighlightForRange}
                     onAddRow={addSheetRow}
                     onAddColumn={addSheetColumn}
+                    onDeleteRow={deleteSheetRow}
+                    onDeleteColumn={deleteSheetColumn}
                     onResizeRow={resizeSheetRow}
                     onResizeColumn={resizeSheetColumn}
                   />

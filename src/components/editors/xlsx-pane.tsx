@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { columnLabel } from '@/utils/document-utils';
 
 export type CellAddress = { row: number; col: number };
@@ -22,6 +22,8 @@ type XlsxPaneProps = {
   onToggleHighlight: (range: CellRange) => void;
   onAddRow: () => void;
   onAddColumn: () => void;
+  onDeleteRow: (row: number) => void;
+  onDeleteColumn: (col: number) => void;
   onResizeRow: (row: number, height: number) => void;
   onResizeColumn: (col: number, width: number) => void;
 };
@@ -67,6 +69,42 @@ function estimateAutoRowHeight(value: string, columnWidth: number) {
   return Math.max(DEFAULT_ROW_HEIGHT, wrappedLineCount * 22 + 16);
 }
 
+function buildCellReference(row: number, col: number): string {
+  return `${columnLabel(col)}${row + 1}`;
+}
+
+function buildRangeReference(start: CellAddress, end: CellAddress): string {
+  const startRef = buildCellReference(start.row, start.col);
+  const endRef = buildCellReference(end.row, end.col);
+  return startRef === endRef ? startRef : `${startRef}:${endRef}`;
+}
+
+function extractReferencedCells(formula: string): Array<CellAddress> {
+  const cells: CellAddress[] = [];
+  // Match cell references like A1, B2, or ranges like A1:B5
+  const refRegex = /([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?/g;
+  let match;
+  while ((match = refRegex.exec(formula)) !== null) {
+    const startCol = match[1].split('').reduce((sum, char) => sum * 26 + (char.charCodeAt(0) - 64), 0) - 1;
+    const startRow = parseInt(match[2]) - 1;
+    cells.push({ row: startRow, col: startCol });
+    
+    if (match[3] && match[4]) {
+      const endCol = match[3].split('').reduce((sum, char) => sum * 26 + (char.charCodeAt(0) - 64), 0) - 1;
+      const endRow = parseInt(match[4]) - 1;
+      // Fill in cells in the range
+      for (let r = Math.min(startRow, endRow); r <= Math.max(startRow, endRow); r++) {
+        for (let c = Math.min(startCol, endCol); c <= Math.max(startCol, endCol); c++) {
+          if (!(r === startRow && c === startCol)) {
+            cells.push({ row: r, col: c });
+          }
+        }
+      }
+    }
+  }
+  return cells;
+}
+
 export function XlsxPane({
   rows,
   formulas,
@@ -83,6 +121,8 @@ export function XlsxPane({
   onToggleHighlight,
   onAddRow,
   onAddColumn,
+  onDeleteRow,
+  onDeleteColumn,
   onResizeRow,
   onResizeColumn
 }: XlsxPaneProps) {
@@ -95,18 +135,62 @@ export function XlsxPane({
   const [stylePopupOpen, setStylePopupOpen] = useState(false);
   const [rowResizeState, setRowResizeState] = useState<{ row: number; startY: number; startHeight: number } | null>(null);
   const [colResizeState, setColResizeState] = useState<{ col: number; startX: number; startWidth: number } | null>(null);
+  const [formulaEditMode, setFormulaEditMode] = useState(false);
+  const [formulaRangeDragging, setFormulaRangeDragging] = useState(false);
+  const [formulaRangeStart, setFormulaRangeStart] = useState<CellAddress | null>(null);
+  const [formulaRangeEnd, setFormulaRangeEnd] = useState<CellAddress | null>(null);
+  const [formulaComposeMode, setFormulaComposeMode] = useState(false);
+  const formulaInputRef = useRef<HTMLInputElement | null>(null);
   const stylePopupRef = useRef<HTMLDivElement | null>(null);
   const styleButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => {
-    setFormulaInput(activeCellValue);
-  }, [activeCellValue]);
+  const insertFormulaReference = useCallback((reference: string) => {
+    setFormulaInput((current) => {
+      const source = current.trim().length > 0 ? current : '=';
+      const normalized = source.startsWith('=') ? source : `=${source}`;
+      const input = formulaInputRef.current;
+
+      if (!input) {
+        return normalized === '=' ? `=${reference}` : `${normalized}${reference}`;
+      }
+
+      const start = input.selectionStart ?? normalized.length;
+      const end = input.selectionEnd ?? normalized.length;
+      const nextValue = `${normalized.slice(0, start)}${reference}${normalized.slice(end)}`;
+
+      window.requestAnimationFrame(() => {
+        const nextCaret = start + reference.length;
+        input.setSelectionRange(nextCaret, nextCaret);
+      });
+
+      return nextValue;
+    });
+    setFormulaEditMode(true);
+  }, []);
 
   useEffect(() => {
-    const handleMouseUp = () => setDragging(false);
+    if (formulaComposeMode) return;
+    setFormulaInput(activeCellValue);
+    setFormulaEditMode(activeCellValue.trim().startsWith('='));
+    setFormulaRangeDragging(false);
+    setFormulaRangeStart(null);
+    setFormulaRangeEnd(null);
+  }, [activeCellValue, formulaComposeMode]);
+
+  useEffect(() => {
+    const handleMouseUp = () => {
+      setDragging(false);
+      if (formulaRangeDragging && formulaRangeStart && formulaRangeEnd) {
+        const reference = buildRangeReference(formulaRangeStart, formulaRangeEnd);
+        insertFormulaReference(reference);
+      }
+      setFormulaRangeDragging(false);
+      setFormulaRangeStart(null);
+      setFormulaRangeEnd(null);
+    };
     window.addEventListener('mouseup', handleMouseUp);
     return () => window.removeEventListener('mouseup', handleMouseUp);
-  }, []);
+  }, [formulaRangeDragging, formulaRangeStart, formulaRangeEnd, insertFormulaReference]);
 
   useEffect(() => {
     if (!rowResizeState && !colResizeState) return;
@@ -211,6 +295,25 @@ export function XlsxPane({
   const applyFromFormulaBar = () => {
     if (!activeRange || locked) return;
     onApplyFormulaToRange(formulaInput, activeRange);
+    setFormulaComposeMode(false);
+  };
+
+  const clearSelectionState = () => {
+    onSelectCell(null);
+    setAnchor(null);
+    setEdge(null);
+    setDragging(false);
+    setFormulaComposeMode(false);
+    setFormulaRangeDragging(false);
+    setFormulaRangeStart(null);
+    setFormulaRangeEnd(null);
+  };
+
+  const exitFormulaCompose = () => {
+    setFormulaComposeMode(false);
+    setFormulaRangeDragging(false);
+    setFormulaRangeStart(null);
+    setFormulaRangeEnd(null);
   };
 
   const openStylePopup = () => {
@@ -225,17 +328,47 @@ export function XlsxPane({
           {rangeLabel(activeRange)}
         </div>
         <input
+          ref={formulaInputRef}
           value={formulaInput}
-          onChange={(event) => setFormulaInput(event.target.value)}
+          onChange={(event) => {
+            setFormulaInput(event.target.value);
+            setFormulaEditMode(event.target.value.trim().startsWith('='));
+            if (event.target.value.trim().startsWith('=')) {
+              setFormulaComposeMode(true);
+            }
+          }}
+          onFocus={() => {
+            if (!formulaInput.trim().startsWith('=') && selectedCell) {
+              const reference = buildCellReference(selectedCell.row, selectedCell.col);
+              setFormulaInput(`=${reference}`);
+              setFormulaEditMode(true);
+              setFormulaComposeMode(true);
+              window.requestAnimationFrame(() => {
+                const input = formulaInputRef.current;
+                if (!input) return;
+                const end = input.value.length;
+                input.setSelectionRange(end, end);
+              });
+            } else if (formulaInput.trim().startsWith('=')) {
+              setFormulaComposeMode(true);
+            }
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
               applyFromFormulaBar();
+              clearSelectionState();
+              formulaInputRef.current?.blur();
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              exitFormulaCompose();
+              formulaInputRef.current?.blur();
             }
           }}
-          placeholder="Formula / value"
+          placeholder={formulaEditMode ? "Building formula... Click cells to add references, type operators (+,-,*,/)" : "Formula / value"}
           disabled={locked}
-          className="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35"
+          className={`w-full bg-transparent text-sm text-white outline-none placeholder:text-white/35 ${formulaEditMode ? 'placeholder:text-[#06b6d4]/60' : ''}`}
         />
         <button
           type="button"
@@ -246,6 +379,16 @@ export function XlsxPane({
         >
           Apply
         </button>
+        {formulaComposeMode && (
+          <button
+            type="button"
+            onClick={exitFormulaCompose}
+            className="rounded-full border border-[#f6c76a]/60 bg-[#f6c76a]/15 px-3 py-1.5 text-xs text-[#f6c76a] transition hover:bg-[#f6c76a]/25"
+            title="Exit formula reference mode"
+          >
+            Done
+          </button>
+        )}
         <button
           ref={styleButtonRef}
           type="button"
@@ -270,6 +413,26 @@ export function XlsxPane({
           className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Add column
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (selectedCell) onDeleteRow(selectedCell.row);
+          }}
+          disabled={locked || !selectedCell}
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Delete row
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (selectedCell) onDeleteColumn(selectedCell.col);
+          }}
+          disabled={locked || !selectedCell}
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Delete column
         </button>
       </div>
       <div className="text-xs text-white/55">Apply is for bulk fill. Normal cell edits already auto-update dependent formulas.</div>
@@ -325,33 +488,63 @@ export function XlsxPane({
                   const active = selectedCell?.row === rowIndex && selectedCell?.col === colIndex;
                   const inRange = activeRange ? isInRange({ row: rowIndex, col: colIndex }, activeRange) : false;
                   const style = cellStyles[cellKey(rowIndex, colIndex)];
+                  
+                  // Check if this cell is referenced in the formula
+                  const referencedCells = formulaEditMode ? extractReferencedCells(formulaInput) : [];
+                  const isReferenced = referencedCells.some(cell => cell.row === rowIndex && cell.col === colIndex);
+                  
+                  // Check if this cell is in the formula range drag selection
+                  const inFormulaRangeDrag = formulaRangeDragging && formulaRangeStart && formulaRangeEnd 
+                    ? isInRange({ row: rowIndex, col: colIndex }, { start: formulaRangeStart, end: formulaRangeEnd })
+                    : false;
+                  
                   return (
                     <td key={`${rowIndex}-${colIndex}`} className="border-b border-r border-white/10 p-0 last:border-r-0" style={{ width: `${colWidths[colIndex] ?? DEFAULT_COL_WIDTH}px`, minWidth: `${colWidths[colIndex] ?? DEFAULT_COL_WIDTH}px`, height: `${rowHeights[rowIndex] ?? DEFAULT_ROW_HEIGHT}px` }}>
                       <textarea
                         value={value}
                         disabled={locked}
-                        onMouseDown={() => {
+                        onMouseDown={(event) => {
                           const cell = { row: rowIndex, col: colIndex };
-                          setDragging(true);
-                          setAnchor(cell);
-                          setEdge(cell);
-                          onSelectCell(cell);
-                          
-                          // If in formula mode, insert cell reference instead
-                          if (activeRange && formulaInput.trim().startsWith('=')) {
-                            const cellRef = `${columnLabel(colIndex)}${rowIndex + 1}`;
-                            setFormulaInput(formulaInput + cellRef);
+                          const isFormulaMode = formulaComposeMode && (formulaEditMode || formulaInput.trim().startsWith('='));
+
+                          if (isFormulaMode) {
+                            event.preventDefault();
+                            onSelectCell(cell);
+                            setFormulaRangeDragging(true);
+                            setFormulaRangeStart(cell);
+                            setFormulaRangeEnd(cell);
+                          } else {
+                            // Normal cell selection mode
+                            setDragging(true);
+                            setAnchor(cell);
+                            setEdge(cell);
+                            onSelectCell(cell);
                           }
                         }}
                         onMouseEnter={() => {
-                          if (!dragging) return;
-                          setEdge({ row: rowIndex, col: colIndex });
+                          if (formulaRangeDragging) {
+                            setFormulaRangeEnd({ row: rowIndex, col: colIndex });
+                          } else if (dragging) {
+                            setEdge({ row: rowIndex, col: colIndex });
+                          }
                         }}
                         onFocus={() => {
-                          const cell = { row: rowIndex, col: colIndex };
-                          setAnchor(cell);
-                          setEdge(cell);
-                          onSelectCell(cell);
+                          setFormulaEditMode(formulaInput.trim().startsWith('='));
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            const entered = event.currentTarget.value.trim();
+                            if (entered.startsWith('=')) {
+                              onApplyFormulaToRange(entered, { start: { row: rowIndex, col: colIndex }, end: { row: rowIndex, col: colIndex } });
+                            }
+                            clearSelectionState();
+                            event.currentTarget.blur();
+                          }
+                          if ((formulaEditMode || formulaInput.trim().startsWith('=')) && (event.key === '+' || event.key === '-' || event.key === '*' || event.key === '/')) {
+                            event.preventDefault();
+                            setFormulaInput((current) => (current.trim().startsWith('=') ? `${current}${event.key}` : `=${current}${event.key}`));
+                          }
                         }}
                         onBlur={(event) => {
                           const entered = event.target.value.trim();
@@ -359,15 +552,14 @@ export function XlsxPane({
                           onApplyFormulaToRange(entered, { start: { row: rowIndex, col: colIndex }, end: { row: rowIndex, col: colIndex } });
                         }}
                         onMouseUp={(event) => {
-                          const nextHeight = event.currentTarget.offsetHeight;
-                          const currentRowHeight = rowHeights[rowIndex] ?? DEFAULT_ROW_HEIGHT;
-                          if (Math.abs(nextHeight - currentRowHeight) > 1) {
+                          const nextHeight = Math.max(36, event.currentTarget.offsetHeight);
+                          if (Math.abs(nextHeight - (rowHeights[rowIndex] ?? DEFAULT_ROW_HEIGHT)) > 1) {
                             onResizeRow(rowIndex, nextHeight);
                           }
                         }}
                         onDoubleClick={() => onResizeRow(rowIndex, estimateAutoRowHeight(value, colWidths[colIndex] ?? DEFAULT_COL_WIDTH))}
                         onChange={(event) => onCellChange(rowIndex, colIndex, event.target.value)}
-                        className={`w-full resize-y bg-transparent px-3 py-2 text-sm text-white outline-none ${style?.bold ? 'font-bold' : ''} ${style?.italic ? 'italic' : ''} ${style?.highlight ? 'bg-[#f6c76a]/30' : ''} ${active ? 'ring-2 ring-inset ring-[#6d7dff]/60' : ''} ${inRange ? 'bg-[#6d7dff]/10' : ''}`}
+                        className={`w-full resize-y bg-transparent px-3 py-2 text-sm text-white outline-none ${style?.bold ? 'font-bold' : ''} ${style?.italic ? 'italic' : ''} ${style?.highlight ? 'bg-[#f6c76a]/30' : ''} ${active ? 'ring-2 ring-inset ring-[#6d7dff]/60' : ''} ${inRange ? 'bg-[#6d7dff]/10' : ''} ${isReferenced ? 'bg-[#ec4899]/20 ring-1 ring-inset ring-[#ec4899]/40' : ''} ${inFormulaRangeDrag ? 'bg-[#06b6d4]/30 ring-1 ring-inset ring-[#06b6d4]/60' : ''}`}
                         style={{ height: `${rowHeights[rowIndex] ?? DEFAULT_ROW_HEIGHT}px`, backgroundColor: style?.highlight ? 'rgba(246, 199, 106, 0.18)' : undefined }}
                       />
                     </td>

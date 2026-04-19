@@ -14,6 +14,7 @@ import Superscript from '@tiptap/extension-superscript';
 type DocxEngineEditorProps = {
   html: string;
   onChange: (nextHtml: string) => void;
+  images?: Record<string, string>;
 };
 
 type ToolbarButtonProps = {
@@ -34,7 +35,7 @@ function ToolbarButton({ label, onClick, active }: ToolbarButtonProps) {
   );
 }
 
-export function DocxEngineEditor({ html, onChange }: DocxEngineEditorProps) {
+export function DocxEngineEditor({ html, onChange, images }: DocxEngineEditorProps) {
   const [showPageBreaks, setShowPageBreaks] = useState(true);
   const [toolbarExpanded, setToolbarExpanded] = useState(true);
   const [linkEditorOpen, setLinkEditorOpen] = useState(false);
@@ -73,15 +74,61 @@ export function DocxEngineEditor({ html, onChange }: DocxEngineEditorProps) {
     }
   });
 
+  // Global CSS for enhanced document rendering
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .tiptap-docx img {
+        max-width: 100%;
+        height: auto;
+        margin: 0.5em 0;
+        border-radius: 4px;
+      }
+      .tiptap-docx table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 1em 0;
+      }
+      .tiptap-docx td, .tiptap-docx th {
+        border: 1px solid #d1d5db;
+        padding: 0.5em;
+      }
+      .tiptap-docx th {
+        background-color: #f3f4f6;
+        font-weight: bold;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, []);
+
   useEffect(() => {
     if (!editor) return;
+    
+    // Embed extracted images into the HTML
+    let processedHtml = html;
+    if (images) {
+      for (const [id, dataUrl] of Object.entries(images)) {
+        // Replace image references with data URLs
+        processedHtml = processedHtml.replace(
+          new RegExp(`src="[^"]*${id}"`, 'g'),
+          `src="${dataUrl}"`
+        );
+        // Also handle cases where images might be referenced differently
+        processedHtml = processedHtml.replace(
+          new RegExp(`src="[^"]*${id.split('.')[0]}`, 'g'),
+          `src="${dataUrl}"`
+        );
+      }
+    }
+    
     const current = editor.getHTML();
-    if (current !== html) {
-      editor.commands.setContent(html || '<h1>Start typing</h1><p>Your DOCX content will keep its layout here.</p>', {
+    if (current !== processedHtml) {
+      editor.commands.setContent(processedHtml || '<h1>Start typing</h1><p>Your DOCX content will keep its layout here.</p>', {
         emitUpdate: false
       });
     }
-  }, [editor, html]);
+  }, [editor, html, images]);
 
   if (!editor) {
     return <div className="min-h-[520px] rounded-[18px] bg-white p-6 text-[#151515]">Loading editor...</div>;
@@ -104,8 +151,8 @@ export function DocxEngineEditor({ html, onChange }: DocxEngineEditorProps) {
   };
 
   return (
-    <div className="space-y-3">
-      <div className="sticky top-0 z-40 space-y-2 rounded-2xl border border-white/10 bg-[#07111f]/95 p-3 shadow-soft backdrop-blur">
+    <div className="flex flex-col min-h-0 gap-3">
+      <div className="sticky top-0 z-50 space-y-2 rounded-2xl border border-white/10 bg-[#07111f]/95 p-3 shadow-soft backdrop-blur">
         <div className={`flex flex-wrap items-center gap-2 ${toolbarExpanded ? 'border-b border-white/10 pb-2' : ''}`}>
           <span className="mr-auto text-[10px] uppercase tracking-[0.16em] text-white/45">DOCX toolbar</span>
           <ToolbarButton label={toolbarExpanded ? 'Collapse' : 'Expand'} onClick={() => setToolbarExpanded((current) => !current)} active={toolbarExpanded} />
@@ -182,8 +229,10 @@ export function DocxEngineEditor({ html, onChange }: DocxEngineEditorProps) {
           </>
         )}
       </div>
-      <div className={`docx-page-frame ${showPageBreaks ? 'show-page-breaks' : ''}`}>
-        <EditorContent editor={editor} />
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className={`docx-page-frame ${showPageBreaks ? 'show-page-breaks' : ''}`}>
+          <EditorContent editor={editor} />
+        </div>
       </div>
     </div>
   );

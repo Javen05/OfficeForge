@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, FileText, Settings2 } from 'lucide-react';
+import Image from 'next/image';
 import type { SlideState } from '@/types/documents';
 
 type PptPaneProps = {
@@ -21,6 +22,7 @@ type PptPaneProps = {
   onAddImage: (file: File) => void;
   onElementPointerDown: (event: ReactPointerEvent<HTMLDivElement>, elementId: string) => void;
   onElementTextChange: (elementId: string, value: string) => void;
+  onSlideUpdate?: (index: number, updates: Partial<SlideState>) => void;
 };
 
 export function PptPane({
@@ -38,9 +40,13 @@ export function PptPane({
   onSendBackward,
   onAddImage,
   onElementPointerDown,
-  onElementTextChange
+  onElementTextChange,
+  onSlideUpdate
 }: PptPaneProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const [showNotes, setShowNotes] = useState(false);
+  const [showSlideProperties, setShowSlideProperties] = useState(false);
+  
   useEffect(() => {
     if (slides.length > 0 && (selectedSlideIndex < 0 || selectedSlideIndex >= slides.length)) {
       onSelectSlide(0);
@@ -62,9 +68,10 @@ export function PptPane({
   const orderedElements = [...currentSlide.elements].sort((a, b) => (a.z ?? 0) - (b.z ?? 0));
 
   return (
-    <div className="grid min-h-0 gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
-      <div className="min-h-0 overflow-auto rounded-[24px] border border-white/10 bg-[#07111f] p-3">
-        <div className="space-y-2">
+    <div className="grid min-h-0 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_240px]">
+      {/* Slide thumbnails sidebar */}
+      <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/10 bg-[#07111f] p-3">
+        <div className="min-h-0 flex-1 space-y-2 overflow-auto pr-1">
           {slides.map((slide, index) => {
             const active = index === selectedSlideIndex;
             return (
@@ -79,11 +86,12 @@ export function PptPane({
             );
           })}
         </div>
-        <button className="mt-3 w-full rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85 transition hover:bg-white/10" onClick={onAddSlide}>
+        <button className="mt-3 w-full shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/85 transition hover:bg-white/10" onClick={onAddSlide}>
           Add slide
         </button>
       </div>
 
+      {/* Main editing area */}
       <div className="min-h-0 space-y-4 rounded-[24px] border border-white/10 bg-[#07111f] p-4 sm:p-5">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={onAddTextBox} className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white transition hover:bg-white/10">Add text</button>
@@ -108,7 +116,13 @@ export function PptPane({
           <div
             ref={slideStageRef}
             className="relative aspect-[16/9] w-full overflow-hidden rounded-[20px] shadow-inner"
-            style={{ background: currentSlide.backgroundColor ?? 'linear-gradient(135deg,#f9f7f2_0%,#ece3d4_100%)' }}
+            style={{
+              backgroundColor: currentSlide.backgroundColor ?? '#f3ede2',
+              backgroundImage: currentSlide.backgroundImage ? `url(${currentSlide.backgroundImage})` : 'linear-gradient(135deg,#f9f7f2_0%,#ece3d4_100%)',
+              backgroundSize: currentSlide.backgroundImage ? 'cover' : 'auto',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat'
+            }}
           >
             <div className="absolute inset-x-4 top-4 flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-black/30">
               <span>{name}</span>
@@ -138,29 +152,137 @@ export function PptPane({
                     width: `${element.w}%`,
                     height: `${element.h}%`,
                     zIndex: element.z ?? 1,
-                    backgroundColor: element.kind === 'image' ? undefined : element.fillColor
+                    backgroundColor: element.kind === 'image' ? undefined : element.fillColor,
+                    overflow: 'hidden'
                   }}
                 >
                   <GripVertical className="pointer-events-none absolute right-2 top-2 h-3.5 w-3.5 opacity-70" />
                   {element.kind === 'image' && element.imageSrc ? (
-                    <img
+                    <Image
                       src={element.imageSrc}
                       alt="Slide asset"
+                      fill
+                      unoptimized
                       draggable={false}
-                      className="h-full w-full rounded-[10px] object-contain"
+                      className="rounded-[10px] object-contain"
                     />
                   ) : (
-                    <textarea
-                      value={element.text}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onChange={(event) => onElementTextChange(element.id, event.target.value)}
-                      className="h-full w-full resize-none bg-transparent text-sm leading-6 outline-none"
-                      style={{ color: element.textColor }}
-                    />
+                    <div className="flex h-full w-full items-start overflow-auto">
+                      <textarea
+                        value={element.text}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onChange={(event) => onElementTextChange(element.id, event.target.value)}
+                        className="min-h-full w-full resize-none bg-transparent text-sm leading-6 outline-none overflow-hidden whitespace-pre-wrap break-words"
+                        style={{ color: element.textColor }}
+                      />
+                    </div>
                   )}
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        <div className="rounded-[20px] border border-white/10 bg-white/5 p-3">
+          <button
+            type="button"
+            onClick={() => setShowSlideProperties((current) => !current)}
+            className={`flex w-full items-center gap-2 rounded-[12px] border px-3 py-2 text-sm transition ${
+              showSlideProperties ? 'border-[#6d7dff]/50 bg-[#6d7dff]/15 text-white' : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
+            }`}
+          >
+            <Settings2 className="h-4 w-4" />
+            Slide Properties
+          </button>
+
+          {showSlideProperties && onSlideUpdate && (
+            <div className="mt-3 space-y-3 rounded-[16px] border border-white/10 bg-[#07111f] p-3">
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.2em] text-white/40">Title</label>
+                <input
+                  value={currentSlide.title}
+                  onChange={(event) => onSlideUpdate(selectedSlideIndex, { title: event.target.value })}
+                  className="w-full rounded-[12px] border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6d7dff]/50 focus:bg-white/10"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.2em] text-white/40">Background color</label>
+                <input
+                  value={currentSlide.backgroundColor ?? ''}
+                  onChange={(event) => onSlideUpdate(selectedSlideIndex, { backgroundColor: event.target.value || undefined })}
+                  placeholder="#f3ede2"
+                  className="w-full rounded-[12px] border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6d7dff]/50 focus:bg-white/10"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.2em] text-white/40">Layout</label>
+                <input
+                  value={currentSlide.layoutName ?? ''}
+                  onChange={(event) => onSlideUpdate(selectedSlideIndex, { layoutName: event.target.value || undefined })}
+                  placeholder="default"
+                  className="w-full rounded-[12px] border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6d7dff]/50 focus:bg-white/10"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] uppercase tracking-[0.2em] text-white/40">Transition</label>
+                <input
+                  value={currentSlide.transitionType ?? ''}
+                  onChange={(event) => onSlideUpdate(selectedSlideIndex, { transitionType: event.target.value || undefined })}
+                  placeholder="fade"
+                  className="w-full rounded-[12px] border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-[#6d7dff]/50 focus:bg-white/10"
+                />
+              </div>
+              <div className="rounded-[12px] border border-white/10 bg-white/5 p-2 text-xs text-white/60">
+                <div className="font-semibold text-white/80">Slide summary</div>
+                <div>{orderedElements.length} objects on this slide</div>
+                {currentSlide.backgroundImage && <div className="mt-1 break-all text-white/50">Background image loaded</div>}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Speaker notes and slide properties sidebar */}
+      <div className="min-h-0 space-y-4 overflow-auto rounded-[24px] border border-white/10 bg-[#07111f] p-4">
+        <div className="space-y-2">
+          <button
+            onClick={() => setShowNotes(!showNotes)}
+            className={`w-full flex items-center gap-2 rounded-[12px] border px-3 py-2 text-sm transition ${
+              showNotes ? 'border-[#6d7dff]/50 bg-[#6d7dff]/15 text-white' : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
+            }`}
+          >
+            <FileText className="h-4 w-4" />
+            Speaker Notes
+          </button>
+
+          {showNotes && (
+            <div className="space-y-2">
+              <textarea
+                value={currentSlide.speakerNotes || ''}
+                onChange={(e) => {
+                  if (onSlideUpdate) {
+                    onSlideUpdate(selectedSlideIndex, { speakerNotes: e.target.value });
+                  }
+                }}
+                placeholder="Add speaker notes for this slide..."
+                className="w-full h-32 rounded-[12px] border border-white/10 bg-white/5 p-2 text-xs text-white placeholder-white/40 outline-none focus:border-[#6d7dff]/50 focus:bg-white/10 resize-none"
+              />
+            </div>
+          )}
+
+          <div className="rounded-[12px] border border-white/10 bg-white/5 p-2 text-xs text-white/60">
+            <div className="font-semibold text-white/80">Layout</div>
+            <div className="capitalize">{currentSlide.layoutName ?? 'default'}</div>
+          </div>
+
+          <div className="rounded-[12px] border border-white/10 bg-white/5 p-2 text-xs text-white/60">
+            <div className="font-semibold text-white/80">Transition</div>
+            <div className="capitalize">{currentSlide.transitionType ?? 'none'}</div>
+          </div>
+
+          <div className="rounded-[12px] border border-white/10 bg-white/5 p-2 text-xs text-white/60">
+            <div className="font-semibold text-white/80">Elements</div>
+            <div>{orderedElements.length} objects on this slide</div>
           </div>
         </div>
       </div>
