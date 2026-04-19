@@ -220,7 +220,7 @@ export function XlsxPane({
 
   return (
     <div className="space-y-3 rounded-[24px] border border-white/10 bg-[#07111f] p-4 sm:p-5">
-      <div className="relative flex items-center gap-3 rounded-[16px] border border-white/10 bg-white/5 px-3 py-2">
+      <div className="sticky top-0 z-40 flex items-center gap-3 rounded-[16px] border border-white/10 bg-white/5 px-3 py-2 shadow-soft">
         <div className="text-xs font-semibold uppercase tracking-[0.2em] text-white/45">
           {rangeLabel(activeRange)}
         </div>
@@ -275,7 +275,7 @@ export function XlsxPane({
       <div className="text-xs text-white/55">Apply is for bulk fill. Normal cell edits already auto-update dependent formulas.</div>
       {locked && <div className="text-xs text-[#f6c76a]">Calculating formulas: cells are temporarily locked.</div>}
       {stylePopupOpen && activeRange && !locked && (
-        <div ref={stylePopupRef} className="absolute left-4 top-[3.7rem] z-30 w-52 rounded-2xl border border-white/10 bg-[#07111f] p-2 shadow-soft">
+        <div ref={stylePopupRef} className="absolute left-4 top-[3.7rem] z-50 w-52 rounded-2xl border border-white/10 bg-[#07111f] p-2 shadow-soft">
           <div className="mb-2 px-2 text-[10px] uppercase tracking-[0.16em] text-white/40">Text style</div>
           <div className="flex flex-col gap-1">
             <button type="button" onClick={() => onToggleBold(activeRange)} className={`rounded-xl px-3 py-2 text-left text-sm transition ${allCellsBold ? 'bg-[#6d7dff]/20 text-white' : 'bg-white/5 text-white/85 hover:bg-white/10'}`}>Bold</button>
@@ -336,6 +336,12 @@ export function XlsxPane({
                           setAnchor(cell);
                           setEdge(cell);
                           onSelectCell(cell);
+                          
+                          // If in formula mode, insert cell reference instead
+                          if (activeRange && formulaInput.trim().startsWith('=')) {
+                            const cellRef = `${columnLabel(colIndex)}${rowIndex + 1}`;
+                            setFormulaInput(formulaInput + cellRef);
+                          }
                         }}
                         onMouseEnter={() => {
                           if (!dragging) return;

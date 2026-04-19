@@ -196,6 +196,41 @@ function buildDocxPdfHtml(contentHtml: string) {
   `;
 }
 
+function buildDocxExportHtml(contentHtml: string) {
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; }
+    body {
+      font-family: Cambria, Georgia, serif;
+      font-size: 12pt;
+      line-height: 1.45;
+      color: #111827;
+    }
+    h1, h2, h3 { margin-top: 0.5em; margin-bottom: 0.25em; font-weight: bold; }
+    h1 { font-size: 2em; }
+    h2 { font-size: 1.5em; }
+    h3 { font-size: 1.25em; }
+    p { margin-bottom: 0.5em; }
+    ul, ol { margin-left: 1.25em; margin-bottom: 0.5em; }
+    li { margin-bottom: 0.25em; }
+    blockquote { border-left: 3px solid #9ca3af; padding-left: 0.75em; margin: 0.5em 0; }
+    hr { margin: 1em 0; }
+    strong, b { font-weight: bold; }
+    em, i { font-style: italic; }
+    u { text-decoration: underline; }
+    s, strike { text-decoration: line-through; }
+    code { font-family: 'Courier New', monospace; }
+    mark { background-color: yellow; }
+  </style>
+</head>
+<body>${contentHtml || '<p></p>'}</body>
+</html>`;
+}
+
+
 async function htmlToPdfBlob(html: string) {
   const PX_PER_PT = 96 / 72;
   const PAGE_MARGIN_PT = 28;
@@ -726,12 +761,9 @@ export function EditorSuite() {
       let blob: Blob;
 
       if (selectedDocument.kind === 'docx' || selectedDocument.kind === 'pdf') {
-        const baseHtml = selectedDocument.kind === 'docx'
-          ? buildDocxPdfHtml(selectedDocument.contentHtml || '<p></p>')
-          : `<h1>${selectedDocument.name}</h1><p>${selectedDocument.pdfNotes || 'No notes provided.'}</p>`;
-
         if (targetFormat === 'docx') {
-          const docxResult = await htmlAsDocxBlob(baseHtml);
+          const docxHtml = buildDocxExportHtml(selectedDocument.contentHtml || '');
+          const docxResult = await htmlAsDocxBlob(docxHtml);
           if (docxResult instanceof Blob) {
             blob = docxResult;
           } else if (ArrayBuffer.isView(docxResult)) {
@@ -741,7 +773,8 @@ export function EditorSuite() {
             blob = new Blob([String(docxResult)], { type: mime });
           }
         } else {
-          blob = await htmlToPdfBlob(baseHtml);
+          const pdfHtml = buildDocxPdfHtml(selectedDocument.contentHtml || '<p></p>');
+          blob = await htmlToPdfBlob(pdfHtml);
         }
       } else if (selectedDocument.kind === 'xlsx') {
         const firstSheet = selectedDocument.sheets[0] ?? { name: 'Sheet1', rows: [['']], formulas: {}, cellStyles: {}, rowHeights: {}, colWidths: {} };
