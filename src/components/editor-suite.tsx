@@ -903,7 +903,7 @@ export function EditorSuite() {
   return (
     <main className={`min-h-screen p-3 sm:p-4 lg:p-5 ${theme === 'light' ? 'text-[#0f172a]' : 'text-white'}`}>
       <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-[1800px] flex-col gap-4 overflow-hidden sm:min-h-[calc(100vh-2rem)]">
-        <section className={`shrink-0 overflow-hidden rounded-[28px] border shadow-soft backdrop-blur-xl ${theme === 'light' ? 'border-black/10 bg-white/70' : 'border-white/10 bg-white/5'} ${focusMode ? 'hidden' : ''}`}>
+        <section className={`sticky top-0 z-30 shrink-0 overflow-hidden rounded-[28px] border shadow-soft backdrop-blur-xl ${theme === 'light' ? 'border-black/10 bg-white/70' : 'border-white/10 bg-white/5'} ${focusMode ? 'hidden' : ''}`}>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 p-4">
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -949,7 +949,7 @@ export function EditorSuite() {
         </section>
 
         <section className={`grid min-h-0 flex-1 gap-4 ${focusMode ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[280px_minmax(0,1fr)]'}`}>
-          <aside className={`min-h-0 overflow-hidden rounded-[28px] border border-white/10 bg-[#08101e]/90 backdrop-blur-xl ${focusMode ? 'hidden' : ''}`}>
+          <aside className={`sticky top-[5.5rem] z-20 min-h-0 overflow-hidden rounded-[28px] border border-white/10 bg-[#08101e]/90 backdrop-blur-xl ${focusMode ? 'hidden' : ''}`}>
             <div className="border-b border-white/10 p-4">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-sm font-semibold text-white">Library</div>
@@ -1004,7 +1004,7 @@ export function EditorSuite() {
 
           <section className="grid min-h-0 overflow-hidden rounded-[28px] border border-white/10 bg-[#08101e]/92 shadow-soft backdrop-blur-xl">
             <div className="min-h-0 overflow-hidden">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4 sm:p-5">
+              <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 p-4 sm:p-5 shadow-soft backdrop-blur">
                 <div>
                   {selectedDocument ? (
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-lg font-semibold text-white">
